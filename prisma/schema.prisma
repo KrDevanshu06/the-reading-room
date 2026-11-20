@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum RequestType {
+  BORROW
+  ACQUISITION
+}
+
+enum RequestStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  FULFILLED
+  CANCELLED
+}
+
+enum CopyStatus {
+  AVAILABLE
+  RESERVED
+  BORROWED
+  DAMAGED
+  LOST
+  ARCHIVED
+}
+
+enum LendingStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+  LOST
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String     @unique
+  passwordHash  String
+  role          UserRole   @default(USER)
+  status        UserStatus @default(PENDING)
+  emailVerified Boolean    @default(false)
+
+  sessions       Session[]
+  verifications  EmailVerification[]
+  passwordResets PasswordReset[]
+  requests       BookRequest[]
+  lendings       LendingTransaction[]
+  adminActions   ActivityLog[]        @relation("AdminActions")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailVerification {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Book {
+  id              String  @id @default(cuid())
+  title           String
+  author          String
+  isbn            String? @unique
+  description     String? @db.Text
+  genre           String?
+  publisher       String?
+  publicationYear Int?
+  coverImage      String?
+  shelfLocation   String?
+  isArchived      Boolean @default(false)
+
+  copies   BookCopy[]
+  requests BookRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([title])
+  @@index([author])
+  @@index([genre])
+  @@index([isArchived])
+}
+
+model BookCopy {
+  id         String     @id @default(cuid())
+  bookId     String
+  copyNumber String
+  status     CopyStatus @default(AVAILABLE)
+
+  book     Book                 @relation(fields: [bookId], references: [id], onDelete: Restrict)
+  lendings LendingTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookId, copyNumber])
+  @@index([bookId, status])
+}
+
+model BookRequest {
+  id     String        @id @default(cuid())
+  userId String
+  bookId String?
+  type   RequestType
+  status RequestStatus @default(PENDING)
+
+  requestedTitle  String
+  requestedAuthor String
+  requestedIsbn   String?
+  requestedGenre  String?
+  reason          String? @db.Text
+
+  adminResponse String?   @db.Text
+  adminNotes    String?   @db.Text
+  expectedDate  DateTime?
+  reviewedAt    DateTime?
+  reviewedById  String?
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  book Book? @relation(fields: [bookId], references: [id], onDelete: Restrict)
+
+  lending LendingTransaction?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([bookId])
+  @@index([type, status])
+  @@index([createdAt])
+}
+
+model LendingTransaction {
+  id         String  @id @default(cuid())
+  userId     String
+  bookCopyId String
+  requestId  String? @unique
+
+  borrowedAt DateTime      @default(now())
+  dueAt      DateTime
+  returnedAt DateTime?
+  status     LendingStatus @default(ACTIVE)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  bookCopy BookCopy @relation(fields: [bookCopyId], references: [id], onDelete: Restrict)
+
+  request BookRequest? @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([bookCopyId, status])
+  @@index([dueAt, status])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation("AdminActions", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model LibrarySettings {
+  id              String @id @default("default")
+  libraryName     String @default("The Reading Room")
+  defaultLoanDays Int    @default(14)
+  maxBooksPerUser Int    @default(3)
+
+  updatedAt DateTime @updatedAt
+}
