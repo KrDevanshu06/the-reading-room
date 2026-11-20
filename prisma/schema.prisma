@@ -236,3 +236,14 @@ model LibrarySettings {
 
   updatedAt DateTime @updatedAt
 }
+
+
+model RateLimitBucket {
+  id        String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
